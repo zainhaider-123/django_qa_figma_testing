@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Figma Files — QA Figma Testing{% endblock %}
+
+{% block content %}
+<h1>Figma Files</h1>
+
+<p style="margin-bottom: 1rem;">
+    <a href="{% url 'figma_auth:project_list' %}" class="btn btn-secondary">← Back to Projects</a>
+</p>
+
+{% if files %}
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem;">
+        {% for file in files %}
+            <div class="card" style="display: flex; flex-direction: column;">
+                <h3>{{ file.name }}</h3>
+                {% if file.last_modified %}
+                    <p style="color: #666; font-size: 0.85rem; margin-bottom: 1rem;">
+                        Last modified: {{ file.last_modified }}
+                    </p>
+                {% endif %}
+                <div style="margin-top: auto;">
+                    <a href="{% url 'figma_auth:frame_tree' file.key %}" class="btn btn-primary">
+                        Browse Frames
+                    </a>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="card">
+        <p>No files found in this project.</p>
+        <a href="{% url 'figma_auth:project_list' %}" class="btn btn-secondary" style="margin-top: 1rem;">
+            Back to Projects
+        </a>
+    </div>
+{% endif %}
+{% endblock %}

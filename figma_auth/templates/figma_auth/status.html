@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% load socialaccount %}
+
+{% block title %}Figma Connection Status — QA Figma Testing{% endblock %}
+
+{% block content %}
+<h1>Figma Connection Status</h1>
+
+<div class="card">
+    {% if connected and figma_user %}
+        <span class="badge badge-pass">Connected</span>
+        <h2 style="margin-top: 1rem;">{{ figma_user.name }}</h2>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+            <tr>
+                <td style="padding: 0.5rem 0; font-weight: 600; width: 120px;">Handle</td>
+                <td style="padding: 0.5rem 0;">{{ figma_user.handle }}</td>
+            </tr>
+            <tr>
+                <td style="padding: 0.5rem 0; font-weight: 600;">Email</td>
+                <td style="padding: 0.5rem 0;">{{ figma_user.email }}</td>
+            </tr>
+            <tr>
+                <td style="padding: 0.5rem 0; font-weight: 600;">Figma UID</td>
+                <td style="padding: 0.5rem 0;">{{ figma_user.uid }}</td>
+            </tr>
+        </table>
+        <div style="margin-top: 1.5rem;">
+            <a href="{% url 'figma_auth:project_list' %}" class="btn btn-primary">Browse Projects</a>
+        </div>
+    {% else %}
+        <span class="badge badge-fail">Not Connected</span>
+        <p style="margin-top: 1rem;">
+            You need to connect your Figma account to use this application.
+        </p>
+        <div style="margin-top: 1.5rem;">
+            <a href="{% url 'figma_login' %}" class="btn btn-primary">Connect Figma</a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

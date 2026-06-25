@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}New Test Run — QA Figma Testing{% endblock %}
+
+{% block content %}
+<h1>New Test Run</h1>
+
+<div class="card">
+    <form method="post" id="new-run-form">
+        {% csrf_token %}
+
+        <fieldset style="border: none; margin-bottom: 1.5rem;">
+            <legend style="font-weight: 600; font-size: 1.1rem; margin-bottom: 1rem;">Frame Details</legend>
+
+            <div class="form-group">
+                <label>Frame Name</label>
+                <input type="text" name="frame_name" value="{{ frame_name }}" readonly>
+            </div>
+
+            <div class="form-group">
+                <label>File Key</label>
+                <input type="text" name="file_key" value="{{ file_key }}" readonly>
+            </div>
+
+            <div class="form-group">
+                <label>Node ID</label>
+                <input type="text" name="node_id" value="{{ node_id }}" readonly>
+            </div>
+
+            <div class="form-group">
+                <label>Dimensions</label>
+                <input type="text" value="{{ frame_width }} × {{ frame_height }}" readonly>
+                <input type="hidden" name="frame_width" value="{{ frame_width }}">
+                <input type="hidden" name="frame_height" value="{{ frame_height }}">
+            </div>
+        </fieldset>
+
+        <fieldset style="border: none; margin-bottom: 1.5rem;">
+            <legend style="font-weight: 600; font-size: 1.1rem; margin-bottom: 1rem;">Comparison Settings</legend>
+
+            <div class="form-group">
+                <label for="site_url">Site URL to compare</label>
+                <input type="url" name="site_url" id="site_url" placeholder="https://example.com/page" required>
+            </div>
+
+            <div class="form-group">
+                <label for="threshold">Pixelmatch Threshold (0.0 – 1.0)</label>
+                <input type="number" name="threshold" id="threshold" value="{{ threshold }}" step="0.01" min="0" max="1">
+                <small style="color: #888;">Lower values are stricter. Default: 0.10</small>
+            </div>
+        </fieldset>
+
+        <button type="submit" class="btn btn-primary" style="font-size: 1rem; padding: 0.75rem 2rem;">
+            Start Test
+        </button>
+    </form>
+
+    <div id="loading-overlay" style="display: none; margin-top: 1.5rem; padding: 1rem; background: #fff3cd; border-radius: 4px; text-align: center;">
+        <p><strong>Test running…</strong></p>
+        <p style="color: #666; margin-top: 0.5rem;">
+            This typically takes a few seconds. The page will redirect automatically when complete.
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    document.getElementById('new-run-form').addEventListener('submit', function() {
+        document.getElementById('loading-overlay').style.display = 'block';
+        document.querySelector('button[type="submit"]').disabled = true;
+        document.querySelector('button[type="submit"]').textContent = 'Running…';
+    });
+</script>
+{% endblock %}

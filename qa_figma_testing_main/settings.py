@@ -43,10 +43,12 @@ INSTALLED_APPS = [
     # external apps
     'allauth',
     'allauth.account',
+    'allauth.socialaccount',
     'allauth.socialaccount.providers.figma',
 
     # my apps
     'figma_auth',
+    'qa',
 
 ]
 
@@ -65,16 +67,10 @@ MIDDLEWARE = [
 ]
 
 # Provider specific settings
+# Figma provider config comes from the SocialApp model (admin), not this dict.
 SOCIALACCOUNT_PROVIDERS = {
-    'google': {
-        # For each OAuth based provider, either add a ``SocialApp``
-        # (``socialaccount`` app) containing the required client
-        # credentials, or list them here:
-        'APP': {
-            'client_id': '123',
-            'secret': '456',
-            'key': ''
-        }
+    'figma': {
+        'SCOPE': ['file_content:read', 'projects:read', 'current_user:read'],
     }
 }
 
@@ -162,3 +158,11 @@ STATICFILES_DIRS = [
     ]
 
 STATIC_ROOT = BASE_DIR / "staticfiles"  # for production
+
+# Media files (uploaded images: figma PNGs, screenshots, diffs)
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# Login redirect
+LOGIN_REDIRECT_URL = '/'
+LOGIN_URL = '/accounts/login/'

@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}Report — {{ run.frame_name }} — QA Figma Testing{% endblock %}
+
+{% block content %}
+<h1>Test Report</h1>
+
+{% if run.status == "failed" %}
+<div class="card" style="border-left: 4px solid #dc3545;">
+    <h2 style="color: #dc3545;">Test Failed</h2>
+    <p style="margin-bottom: 1rem;">{{ run.error_message }}</p>
+    <form method="post" action="{% url 'qa:rerun' run.id %}" style="display: inline;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary">Re-run</button>
+    </form>
+    <a href="{% url 'qa:new_run' %}" class="btn btn-secondary" style="margin-left: 0.5rem;">New Test</a>
+</div>
+{% elif run.status == "running" %}
+<div class="card" style="border-left: 4px solid #856404;">
+    <h2 style="color: #856404;">Test Running…</h2>
+    <p>Please wait, the test is currently in progress.</p>
+    <a href="{% url 'qa:run_report' run.id %}" class="btn btn-secondary">Refresh</a>
+</div>
+{% elif run.status == "completed" %}
+<div class="card" style="border-left: 4px solid {% if run.pass_fail == 'pass' %}#28a745{% else %}#dc3545{% endif %};">
+    <div style="display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;">
+        <div>
+            {% if run.pass_fail == "pass" %}
+                <span class="badge badge-pass" style="font-size: 1.25rem; padding: 0.5rem 1.5rem;">PASS</span>
+            {% else %}
+                <span class="badge badge-fail" style="font-size: 1.25rem; padding: 0.5rem 1.5rem;">FAIL</span>
+            {% endif %}
+        </div>
+        <div>
+            <span style="font-size: 2.5rem; font-weight: 700;">
+                {{ run.mismatch_percentage }}%
+            </span>
+            <span style="color: #666; display: block; font-size: 0.9rem;">mismatch</span>
+        </div>
+        <div style="margin-left: auto; display: flex; gap: 0.5rem;">
+            <form method="post" action="{% url 'qa:rerun' run.id %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-primary">Re-run</button>
+            </form>
+            <a href="{% url 'qa:new_run' %}" class="btn btn-secondary">New Test</a>
+        </div>
+    </div>
+</div>
+
+{% if run.figma_image and run.site_screenshot %}
+<div class="card">
+    <h2>Image Comparison</h2>
+
+    {# Image Comparison Slider #}
+    <div id="comparison-slider-wrapper" style="position: relative; max-width: 100%; margin: 1rem 0; user-select: none; cursor: ew-resere;">
+        <div id="comparison-slider" style="position: relative; width: 100%; overflow: hidden; border: 1px solid #ddd; border-radius: 4px;">
+            {# Base image (live screenshot — always fully visible) #}
+            <img src="{{ run.site_screenshot.url }}" alt="Live Screenshot" style="display: block; width: 100%; height: auto;">
+
+            {# Overlay image (Figma design — clipped) #}
+            <div id="slider-overlay" style="position: absolute; top: 0; left: 0; width: 50%; height: 100%; overflow: hidden;">
+                <img src="{{ run.figma_image.url }}" alt="Figma Design" style="display: block; width: 100%; height: auto; max-width: none;">
+            </div>
+
+            {# Handle #}
+            <div id="slider-handle" style="position: absolute; top: 0; left: 50%; width: 3px; height: 100%; background: #4361ee; cursor: ew-resize; z-index: 2;">
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 32px; height: 32px; background: #4361ee; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.8rem; font-weight: bold;">
+                    ⇔
+                </div>
+            </div>
+
+            <div style="position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.6); color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 0.75rem; z-index: 3;">Design</div>
+            <div style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.6); color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 0.75rem; z-index: 3;">Screenshot</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Side-by-Side</h2>
+    <div class="image-grid">
+        <figure>
+            <img src="{{ run.figma_image.url }}" alt="Figma Design">
+            <figcaption>Figma Design</figcaption>
+        </figure>
+        <figure>
+            <img src="{{ run.site_screenshot.url }}" alt="Live Screenshot">
+            <figcaption>Live Screenshot</figcaption>
+        </figure>
+        <figure>
+            <img src="{{ run.diff_image.url }}" alt="Diff">
+            <figcaption>
+                Diff
+                {% if run.mismatch_pixels is not None %}
+                    ({{ run.mismatch_pixels }} px)
+                {% endif %}
+            </figcaption>
+        </figure>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
+<div class="card">
+    <h2>Run Details</h2>
+    <table style="width: 100%; border-collapse: collapse;">
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 0.5rem; font-weight: 500; width: 180px;">Frame Name</td>
+            <td style="padding: 0.5rem;">{{ run.frame_name }}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 0.5rem; font-weight: 500;">Site URL</td>
+            <td style="padding: 0.5rem;"><a href="{{ run.site_url }}" target="_blank">{{ run.site_url }}</a></td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 0.5rem; font-weight: 500;">Dimensions</td>
+            <td style="padding: 0.5rem;">{{ run.frame_width }} × {{ run.frame_height }}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 0.5rem; font-weight: 500;">Threshold</td>
+            <td style="padding: 0.5rem;">{{ run.threshold }}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 0.5rem; font-weight: 500;">Status</td>
+            <td style="padding: 0.5rem;">
+                {% if run.status == "completed" and run.pass_fail == "pass" %}
+                    <span class="badge badge-pass">PASS</span>
+                {% elif run.status == "completed" and run.pass_fail == "fail" %}
+                    <span class="badge badge-fail">FAIL</span>
+                {% elif run.status == "running" %}
+                    <span class="badge badge-running">Running</span>
+                {% elif run.status == "failed" %}
+                    <span class="badge badge-fail">Failed</span>
+                {% else %}
+                    <span class="badge badge-running">{{ run.status }}</span>
+                {% endif %}
+            </td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 0.5rem; font-weight: 500;">Mismatch</td>
+            <td style="padding: 0.5rem;">
+                {% if run.mismatch_percentage is not None %}
+                    {{ run.mismatch_percentage }}% ({{ run.mismatch_pixels }} pixels)
+                {% else %}
+                    —
+                {% endif %}
+            </td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 0.5rem; font-weight: 500;">Created</td>
+            <td style="padding: 0.5rem;">{{ run.created_at|date:"M j, Y H:i:s" }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 0.5rem; font-weight: 500;">Completed</td>
+            <td style="padding: 0.5rem;">{{ run.completed_at|date:"M j, Y H:i:s"|default:"—" }}</td>
+        </tr>
+    </table>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+    var slider = document.getElementById('comparison-slider');
+    var overlay = document.getElementById('slider-overlay');
+    var handle = document.getElementById('slider-handle');
+
+    if (!slider || !overlay || !handle) return;
+
+    var isDragging = false;
+
+    function setPosition(x) {
+        var rect = slider.getBoundingClientRect();
+        var pos = (x - rect.left) / rect.width;
+        if (pos < 0) pos = 0;
+        if (pos > 1) pos = 1;
+        var pct = pos * 100;
+        overlay.style.width = pct + '%';
+        handle.style.left = pct + '%';
+    }
+
+    function onMouseDown(e) {
+        isDragging = true;
+        setPosition(e.clientX);
+        e.preventDefault();
+    }
+
+    function onMouseMove(e) {
+        if (!isDragging) return;
+        setPosition(e.clientX);
+        e.preventDefault();
+    }
+
+    function onMouseUp() {
+        isDragging = false;
+    }
+
+    function onTouchMove(e) {
+        if (!isDragging) return;
+        var touch = e.touches[0];
+        setPosition(touch.clientX);
+        e.preventDefault();
+    }
+
+    handle.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+
+    slider.addEventListener('touchstart', function(e) {
+        isDragging = true;
+        setPosition(e.touches[0].clientX);
+        e.preventDefault();
+    });
+    document.addEventListener('touchmove', onTouchMove);
+    document.addEventListener('touchend', onMouseUp);
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — QA Figma Testing{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="card" style="text-align: center; padding: 3rem 1.5rem;">
+    <h2>Welcome, {{ user.username }}!</h2>
+    <p style="color: #666; margin-bottom: 1.5rem;">
+        Compare your Figma designs against live site screenshots and get pixel‑accurate
+        diff reports.
+    </p>
+    <a href="{% url 'qa:new_run' %}" class="btn btn-primary" style="font-size: 1.1rem; padding: 0.75rem 2rem;">
+        + New Test Run
+    </a>
+</div>
+
+{% if recent_runs %}
+    <h2>Recent Runs</h2>
+    <div class="card">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="border-bottom: 2px solid #e2e8f0; text-align: left;">
+                    <th style="padding: 0.5rem;">Frame</th>
+                    <th style="padding: 0.5rem;">URL</th>
+                    <th style="padding: 0.5rem;">Status</th>
+                    <th style="padding: 0.5rem;">Mismatch</th>
+                    <th style="padding: 0.5rem;">Date</th>
+                    <th style="padding: 0.5rem;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in recent_runs %}
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 0.5rem;">{{ run.frame_name }}</td>
+                    <td style="padding: 0.5rem; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ run.site_url }}</td>
+                    <td style="padding: 0.5rem;">
+                        {% if run.status == "completed" and run.pass_fail == "pass" %}
+                            <span class="badge badge-pass">PASS</span>
+                        {% elif run.status == "completed" and run.pass_fail == "fail" %}
+                            <span class="badge badge-fail">FAIL</span>
+                        {% elif run.status == "running" %}
+                            <span class="badge badge-running">Running</span>
+                        {% elif run.status == "failed" %}
+                            <span class="badge badge-fail">Failed</span>
+                        {% else %}
+                            <span class="badge badge-running">{{ run.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 0.5rem;">
+                        {% if run.mismatch_percentage is not None %}
+                            {{ run.mismatch_percentage }}%
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td style="padding: 0.5rem;">{{ run.created_at|date:"M j, H:i" }}</td>
+                    <td style="padding: 0.5rem;">
+                        <a href="{% url 'qa:run_report' run.id %}" class="btn btn-secondary" style="padding: 0.25rem 0.75rem;">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p><a href="{% url 'qa:run_list' %}">View all runs →</a></p>
+{% else %}
+    <div class="card" style="text-align: center; padding: 2rem;">
+        <p style="color: #888;">No test runs yet. Create your first test to get started!</p>
+    </div>
+{% endif %}
+{% endblock %}
