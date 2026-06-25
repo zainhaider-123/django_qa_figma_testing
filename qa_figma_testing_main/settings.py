@@ -118,7 +118,9 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
-STATICFILES_BASE_DIR = BASE_DIR / "staticfiles"
-
 # source(s) for python manage.py collectstatic
-STATICFILES_DIRS = [STATICFILES_BASE_DIR]
+STATICFILES_DIRS = [
+        BASE_DIR / "static"
+    ]
+
+STATIC_ROOT = BASE_DIR / "staticfiles"  # for production
