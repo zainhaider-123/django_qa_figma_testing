@@ -2,3 +2,14 @@ asgiref==3.11.1
 Django==6.0.6
 python-decouple==3.8
 sqlparse==0.5.5
+
+requests==2.32.4
+Pillow==11.3.0
+pixelmatch==0.3.0
+playwright==1.54.0
+
+celery==5.5.3
+redis==6.2.0
+django-celery-results==2.6.0
+
+django-allauth==65.10.0
