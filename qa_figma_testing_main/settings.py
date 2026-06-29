@@ -169,6 +169,21 @@ STATIC_ROOT = BASE_DIR / "staticfiles"  # for production
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Caching (LocMemCache — appropriate for single-user, synchronous, SQLite-only v2)
+# https://docs.djangoproject.com/en/6.0/topics/cache/
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'figma-qa-default',
+    }
+}
+
+# How long to cache Figma API file-tree responses (seconds). Tunable via .env.
+FIGMA_FILE_TREE_CACHE_TIMEOUT = config("FIGMA_FILE_TREE_CACHE_TIMEOUT", default=300, cast=int)
+
+# How long to cache Figma frame-image PNG bytes (seconds). Tunable via .env.
+FIGMA_FRAME_IMAGE_CACHE_TIMEOUT = config("FIGMA_FRAME_IMAGE_CACHE_TIMEOUT", default=600, cast=int)
+
 # Site ID (required by django-allauth to match SocialApp to current site)
 SITE_ID = 1
 

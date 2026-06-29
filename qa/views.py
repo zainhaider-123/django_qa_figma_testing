@@ -61,10 +61,14 @@ def new_run(request):
             status="running",
         )
 
+        refresh = request.GET.get("refresh") == "1"
+
         try:
             # 1. Fetch Figma frame image
             client = FigmaClient(request.user)
-            figma_png = client.get_frame_image(file_key, node_id, scale=2)
+            figma_png = client.get_frame_image(
+                file_key, node_id, scale=2, refresh=refresh
+            )
             run.figma_image.save(
                 f"{run.id}_figma.png", ContentFile(figma_png), save=False
             )
@@ -156,10 +160,12 @@ def rerun(request, run_id):
         status="running",
     )
 
+    refresh = request.GET.get("refresh") == "1"
+
     try:
         client = FigmaClient(request.user)
         figma_png = client.get_frame_image(
-            new_run.file_key, new_run.node_id, scale=2
+            new_run.file_key, new_run.node_id, scale=2, refresh=refresh
         )
         new_run.figma_image.save(
             f"{new_run.id}_figma.png", ContentFile(figma_png), save=False

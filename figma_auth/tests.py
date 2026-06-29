@@ -1,6 +1,7 @@
 from unittest.mock import patch, MagicMock
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
 
@@ -209,6 +210,7 @@ class FileListViewTests(TestCase):
 
 class FrameTreeViewTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.file_key = "abc123"
         self.url = reverse("figma_auth:frame_tree", args=[self.file_key])
         self.user = User.objects.create_user(
@@ -232,9 +234,38 @@ class FrameTreeViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No Figma token found")
 
+    @patch("figma_auth.views.FigmaClient")
+    def test_refresh_param_passes_through(self, mock_client_class):
+        """?refresh=1 should pass refresh=True to get_file_tree."""
+        mock_client = MagicMock()
+        mock_client.get_file_tree.return_value = {"document": {"children": []}}
+        mock_client_class.return_value = mock_client
+
+        self.client.force_login(self.user)
+        response = self.client.get(self.url + "?refresh=1")
+        self.assertEqual(response.status_code, 200)
+        mock_client.get_file_tree.assert_called_once_with(
+            self.file_key, depth=2, refresh=True
+        )
+
+    @patch("figma_auth.views.FigmaClient")
+    def test_no_refresh_param_defaults_to_false(self, mock_client_class):
+        """Without ?refresh, get_file_tree should be called with refresh=False."""
+        mock_client = MagicMock()
+        mock_client.get_file_tree.return_value = {"document": {"children": []}}
+        mock_client_class.return_value = mock_client
+
+        self.client.force_login(self.user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        mock_client.get_file_tree.assert_called_once_with(
+            self.file_key, depth=2, refresh=False
+        )
+
 
 class FigmaClientTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.user = User.objects.create_user(
             username="figmauser", password="password123"
         )
@@ -417,3 +448,159 @@ class FigmaClientTests(TestCase):
         self.assertEqual(exc.message, "I'm a teapot")
         self.assertIn("418", str(exc))
         self.assertIn("teapot", str(exc))
+
+    @patch("requests.Session.request")
+    def test_get_frame_image_caches_response(self, mock_request):
+        """get_frame_image() should cache the PNG bytes."""
+        images_response = MagicMock()
+        images_response.status_code = 200
+        images_response.ok = True
+        images_response.json.return_value = {
+            "images": {"frame_1": "https://example.com/image.png"}
+        }
+        png_response = MagicMock()
+        png_response.status_code = 200
+        png_response.ok = True
+        png_response.content = b"fake_png_bytes"
+        mock_request.side_effect = [images_response, png_response]
+
+        client = FigmaClient(self.user)
+        result1 = client.get_frame_image("file_key", "frame_1")
+        result2 = client.get_frame_image("file_key", "frame_1")
+
+        self.assertEqual(result1, b"fake_png_bytes")
+        self.assertEqual(result2, b"fake_png_bytes")
+        self.assertEqual(mock_request.call_count, 2)
+
+    @patch("requests.Session.request")
+    def test_get_frame_image_refresh_bypasses_cache(self, mock_request):
+        """get_frame_image(refresh=True) should bypass cache and hit the API."""
+        images_response = MagicMock()
+        images_response.status_code = 200
+        images_response.ok = True
+        images_response.json.return_value = {
+            "images": {"frame_1": "https://example.com/image.png"}
+        }
+        png_response = MagicMock()
+        png_response.status_code = 200
+        png_response.ok = True
+        png_response.content = b"fake_png_bytes"
+        mock_request.side_effect = [
+            images_response, png_response,
+            images_response, png_response,
+        ]
+
+        client = FigmaClient(self.user)
+        client.get_frame_image("file_key", "frame_1")
+        client.get_frame_image("file_key", "frame_1", refresh=True)
+
+        self.assertEqual(mock_request.call_count, 4)
+
+    @patch("requests.Session.request")
+    def test_get_frame_image_cache_keyed_per_node(self, mock_request):
+        """Different node IDs should produce separate cache entries."""
+        images_response = MagicMock()
+        images_response.status_code = 200
+        images_response.ok = True
+        images_response.json.return_value = {
+            "images": {"node_a": "https://example.com/a.png"}
+        }
+        images_response_2 = MagicMock()
+        images_response_2.status_code = 200
+        images_response_2.ok = True
+        images_response_2.json.return_value = {
+            "images": {"node_b": "https://example.com/b.png"}
+        }
+        png_response = MagicMock()
+        png_response.status_code = 200
+        png_response.ok = True
+        png_response.content = b"fake_png_bytes"
+        mock_request.side_effect = [
+            images_response, png_response,
+            images_response_2, png_response,
+        ]
+
+        client = FigmaClient(self.user)
+        client.get_frame_image("file_key", "node_a")
+        client.get_frame_image("file_key", "node_b")
+
+        self.assertEqual(mock_request.call_count, 4)
+
+    @patch("requests.Session.request")
+    def test_get_frame_image_does_not_cache_errors(self, mock_request):
+        """Failed API calls should not be cached."""
+        error_response = MagicMock()
+        error_response.status_code = 429
+        error_response.ok = False
+        mock_request.return_value = error_response
+
+        client = FigmaClient(self.user)
+        with self.assertRaises(FigmaAPIError):
+            client.get_frame_image("file_key", "frame_1")
+        with self.assertRaises(FigmaAPIError):
+            client.get_frame_image("file_key", "frame_1")
+
+        self.assertEqual(mock_request.call_count, 2)
+
+    @patch("requests.Session.request")
+    def test_get_file_tree_caches_response(self, mock_request):
+        """get_file_tree() should cache the API response."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.ok = True
+        mock_response.json.return_value = {"document": {"children": []}}
+        mock_request.return_value = mock_response
+
+        client = FigmaClient(self.user)
+        result1 = client.get_file_tree("file_key_1", depth=2)
+        result2 = client.get_file_tree("file_key_1", depth=2)
+
+        self.assertEqual(result1, result2)
+        self.assertEqual(mock_request.call_count, 1)
+
+    @patch("requests.Session.request")
+    def test_get_file_tree_refresh_bypasses_cache(self, mock_request):
+        """get_file_tree(refresh=True) should bypass cache and hit the API."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.ok = True
+        mock_response.json.return_value = {"document": {"children": []}}
+        mock_request.return_value = mock_response
+
+        client = FigmaClient(self.user)
+        client.get_file_tree("file_key_1", depth=2)
+        client.get_file_tree("file_key_1", depth=2, refresh=True)
+
+        self.assertEqual(mock_request.call_count, 2)
+
+    @patch("requests.Session.request")
+    def test_get_file_tree_cache_keyed_per_file(self, mock_request):
+        """Different file keys should produce separate cache entries."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.ok = True
+        mock_response.json.return_value = {"document": {"children": []}}
+        mock_request.return_value = mock_response
+
+        client = FigmaClient(self.user)
+        client.get_file_tree("file_a", depth=2)
+        client.get_file_tree("file_b", depth=2)
+
+        self.assertEqual(mock_request.call_count, 2)
+
+    @patch("requests.Session.request")
+    def test_get_file_tree_does_not_cache_errors(self, mock_request):
+        """Failed API calls should not be cached."""
+        error_response = MagicMock()
+        error_response.status_code = 429
+        error_response.ok = False
+        mock_request.return_value = error_response
+
+        client = FigmaClient(self.user)
+        with self.assertRaises(FigmaAPIError):
+            client.get_file_tree("file_key_1", depth=2)
+
+        with self.assertRaises(FigmaAPIError):
+            client.get_file_tree("file_key_1", depth=2)
+
+        self.assertEqual(mock_request.call_count, 2)

@@ -3,6 +3,8 @@ import time
 
 import requests
 from allauth.socialaccount.models import SocialToken
+from django.conf import settings
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,7 @@ class FigmaClient:
             raise FigmaAPIError(
                 401, "No Figma token found for this user. Please connect Figma."
             ) from exc
+        self.user_id = user.id
         self.access_token = token.token
         self._session = requests.Session()
         self._session.headers.update(
@@ -113,15 +116,31 @@ class FigmaClient:
         data = self._get(f"/v1/projects/{project_id}/files")
         return data.get("files", [])
 
-    def get_file_tree(self, file_key: str, depth: int = 2) -> dict:
+    def get_file_tree(self, file_key: str, depth: int = 2, refresh: bool = False) -> dict:
         """
         GET /v1/files/{file_key}?depth={depth}
         Returns the full document tree with pages (CANVAS) and frames (FRAME).
+
+        Responses are cached per user+file+depth to avoid hitting the
+        Figma 300 req/min rate limit during development. Pass refresh=True
+        to bypass the cache and force a fresh API call (the result is
+        still written back to the cache).
         """
-        return self._get(f"/v1/files/{file_key}", params={"depth": depth})
+        cache_key = f"figma:file_tree:{self.user_id}:{file_key}:d{depth}"
+        if not refresh:
+            cached = cache.get(cache_key)
+            if cached is not None:
+                logger.debug("Cache hit for %s", cache_key)
+                return cached
+
+        tree = self._get(f"/v1/files/{file_key}", params={"depth": depth})
+        timeout = getattr(settings, "FIGMA_FILE_TREE_CACHE_TIMEOUT", 300)
+        cache.set(cache_key, tree, timeout)
+        return tree
 
     def get_frame_image(
-        self, file_key: str, node_id: str, scale: float = 2
+        self, file_key: str, node_id: str, scale: float = 2,
+        refresh: bool = False,
     ) -> bytes:
         """
         GET /v1/images/{file_key}?ids={node_id}&scale={scale}&format=png
@@ -133,7 +152,28 @@ class FigmaClient:
         If Figma returns a 400 render-timeout error (common for large frames
         at high scale), automatically retries with progressively lower scale
         values (2 → 1 → 0.5) until the render succeeds.
+
+        Responses are cached per user+file+node+scale to avoid hitting the
+        Figma 300 req/min rate limit. Pass refresh=True to bypass the cache
+        and force a fresh API call (the result is still written back to the
+        cache).
         """
+        cache_key = f"figma:frame_image:{self.user_id}:{file_key}:{node_id}:s{scale}"
+        if not refresh:
+            cached = cache.get(cache_key)
+            if cached is not None:
+                logger.debug("Cache hit for %s", cache_key)
+                return cached
+
+        png_bytes = self._fetch_frame_image(file_key, node_id, scale)
+        timeout = getattr(settings, "FIGMA_FRAME_IMAGE_CACHE_TIMEOUT", 600)
+        cache.set(cache_key, png_bytes, timeout)
+        return png_bytes
+
+    def _fetch_frame_image(
+        self, file_key: str, node_id: str, scale: float = 2
+    ) -> bytes:
+        """Fetch the frame image from the Figma API with scale-fallback retries."""
         scales_to_try = [scale]
         # Build fallback chain down to 0.5
         current = scale

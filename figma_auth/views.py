@@ -156,8 +156,10 @@ def frame_tree(request, file_key):
         messages.error(request, str(exc))
         return render(request, "figma_auth/frame_tree.html", {"pages": []})
 
+    refresh = request.GET.get("refresh") == "1"
+
     try:
-        tree = client.get_file_tree(file_key, depth=2)
+        tree = client.get_file_tree(file_key, depth=2, refresh=refresh)
     except FigmaAPIError as exc:
         messages.error(request, f"Could not fetch file tree: {exc.message}")
         return render(request, "figma_auth/frame_tree.html", {"pages": []})
