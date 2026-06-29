@@ -334,6 +334,55 @@ class FigmaClientTests(TestCase):
         self.assertEqual(ctx.exception.status_code, 404)
 
     @patch("requests.Session.request")
+    def test_get_frame_image_render_timeout_retries_lower_scale(self, mock_request):
+        """get_frame_image() should retry with lower scale on 400 render timeout."""
+        # First attempt: 400 render timeout
+        timeout_response = MagicMock()
+        timeout_response.status_code = 400
+        timeout_response.ok = False
+        timeout_response.json.return_value = {
+            "message": "Render timeout, try requesting fewer or smaller images"
+        }
+
+        # Second attempt (scale=1): success
+        images_response = MagicMock()
+        images_response.status_code = 200
+        images_response.ok = True
+        images_response.json.return_value = {
+            "images": {"frame_1": "https://example.com/image.png"}
+        }
+
+        png_response = MagicMock()
+        png_response.status_code = 200
+        png_response.ok = True
+        png_response.content = b"fake_png_bytes"
+
+        mock_request.side_effect = [timeout_response, images_response, png_response]
+
+        client = FigmaClient(self.user)
+        result = client.get_frame_image("file_key", "frame_1", scale=2)
+        self.assertEqual(result, b"fake_png_bytes")
+        # 3 calls: timeout at scale=2, success at scale=1, png download
+        self.assertEqual(mock_request.call_count, 3)
+
+    @patch("requests.Session.request")
+    def test_get_frame_image_render_timeout_all_scales_fail(self, mock_request):
+        """get_frame_image() should raise after all scale retries exhausted."""
+        timeout_response = MagicMock()
+        timeout_response.status_code = 400
+        timeout_response.ok = False
+        timeout_response.json.return_value = {
+            "message": "Render timeout, try requesting fewer or smaller images"
+        }
+        mock_request.return_value = timeout_response
+
+        client = FigmaClient(self.user)
+        with self.assertRaises(FigmaAPIError) as ctx:
+            client.get_frame_image("file_key", "frame_1", scale=2)
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("render timeout", str(ctx.exception).lower())
+
+    @patch("requests.Session.request")
     def test_401_raises_figma_api_error(self, mock_request):
         """A 401 response should raise FigmaAPIError."""
         mock_response = MagicMock()

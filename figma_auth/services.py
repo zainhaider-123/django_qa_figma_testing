@@ -1,5 +1,10 @@
+import logging
+import time
+
 import requests
 from allauth.socialaccount.models import SocialToken
+
+logger = logging.getLogger(__name__)
 
 
 class FigmaAPIError(Exception):
@@ -115,27 +120,69 @@ class FigmaClient:
         """
         return self._get(f"/v1/files/{file_key}", params={"depth": depth})
 
-    def get_frame_image(self, file_key: str, node_id: str, scale: int = 2) -> bytes:
+    def get_frame_image(
+        self, file_key: str, node_id: str, scale: float = 2
+    ) -> bytes:
         """
         GET /v1/images/{file_key}?ids={node_id}&scale={scale}&format=png
         Returns the PNG image bytes for the given frame node.
 
         First calls the images endpoint to obtain a signed download URL,
         then downloads the actual PNG binary from that URL.
+
+        If Figma returns a 400 render-timeout error (common for large frames
+        at high scale), automatically retries with progressively lower scale
+        values (2 → 1 → 0.5) until the render succeeds.
         """
-        data = self._get(
-            f"/v1/images/{file_key}",
-            params={"ids": node_id, "scale": scale, "format": "png"},
-        )
-        images = data.get("images", {})
-        image_url = images.get(node_id)
-        if not image_url:
-            raise FigmaAPIError(
-                404,
-                f"No image URL returned for node '{node_id}'. "
-                f"Check that the node_id is a valid frame in file '{file_key}'.",
-            )
-        # Download the actual PNG bytes from the signed URL (no auth required)
-        png_response = requests.get(image_url)
-        png_response.raise_for_status()
-        return png_response.content
+        scales_to_try = [scale]
+        # Build fallback chain down to 0.5
+        current = scale
+        while current > 0.5:
+            current = current / 2
+            scales_to_try.append(current)
+
+        last_error = None
+        for attempt_scale in scales_to_try:
+            try:
+                data = self._get(
+                    f"/v1/images/{file_key}",
+                    params={
+                        "ids": node_id,
+                        "scale": attempt_scale,
+                        "format": "png",
+                    },
+                )
+            except FigmaAPIError as exc:
+                if exc.status_code == 400 and "render timeout" in exc.message.lower():
+                    logger.warning(
+                        "Figma render timeout at scale=%s for node %s, "
+                        "retrying at lower scale",
+                        attempt_scale,
+                        node_id,
+                    )
+                    last_error = exc
+                    time.sleep(1)
+                    continue
+                raise
+
+            images = data.get("images", {})
+            image_url = images.get(node_id)
+            if not image_url:
+                raise FigmaAPIError(
+                    404,
+                    f"No image URL returned for node '{node_id}'. "
+                    f"Check that the node_id is a valid frame in file "
+                    f"'{file_key}'.",
+                )
+            # Download the actual PNG bytes from the signed URL (no auth required)
+            png_response = requests.get(image_url)
+            png_response.raise_for_status()
+            return png_response.content
+
+        # All scale attempts failed with render timeout
+        raise FigmaAPIError(
+            400,
+            "Figma render timeout at all attempted scales. "
+            "The frame may be too large to render. Try selecting a "
+            "smaller frame or component.",
+        ) from last_error
