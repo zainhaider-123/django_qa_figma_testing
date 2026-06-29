@@ -1,6 +1,7 @@
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.contrib import messages
+from django.views.decorators.http import require_POST
 
 from allauth.socialaccount.models import SocialAccount, SocialToken
 
@@ -44,40 +45,81 @@ def connection_status(request):
 
 @login_required
 def project_list(request):
-    """List projects from the user's Figma teams."""
+    """List projects from the user's Figma team.
+
+    The Figma API does not return team IDs from /v1/me, so the user must
+    provide their team ID once. It is stored in SocialAccount.extra_data
+    and reused on subsequent visits.
+    """
+    try:
+        account = SocialAccount.objects.get(
+            user=request.user, provider="figma"
+        )
+    except SocialAccount.DoesNotExist:
+        messages.error(request, "No Figma account connected. Please connect Figma first.")
+        return render(request, "figma_auth/project_list.html", {"projects": []})
+
+    team_id = account.extra_data.get("team_id")
+
+    # No team ID stored yet — ask the user to provide it
+    if not team_id:
+        return render(
+            request,
+            "figma_auth/project_list.html",
+            {"projects": [], "need_team_id": True},
+        )
+
+    # Fetch projects for the stored team ID
     try:
         client = FigmaClient(request.user)
     except FigmaAPIError as exc:
         messages.error(request, str(exc))
-        return render(request, "figma_auth/project_list.html", {"projects": []})
+        return render(
+            request,
+            "figma_auth/project_list.html",
+            {"projects": [], "team_id": team_id},
+        )
 
     try:
-        me = client.get_me()
+        team_projects = client.get_team_projects(team_id)
     except FigmaAPIError as exc:
-        messages.error(request, f"Could not fetch Figma user info: {exc.message}")
-        return render(request, "figma_auth/project_list.html", {"projects": []})
-
-    teams = me.get("teams", [])
-    projects = []
-
-    for team in teams:
-        team_id = team.get("id")
-        team_name = team.get("name", "Unknown Team")
-        try:
-            team_projects = client.get_team_projects(team_id)
-            for proj in team_projects:
-                proj["team_name"] = team_name
-            projects.extend(team_projects)
-        except FigmaAPIError as exc:
-            messages.warning(
-                request,
-                f"Could not load projects for team '{team_name}': {exc.message}",
-            )
+        messages.error(request, f"Could not fetch projects: {exc.message}")
+        return render(
+            request,
+            "figma_auth/project_list.html",
+            {"projects": [], "team_id": team_id},
+        )
 
     context = {
-        "projects": projects,
+        "projects": team_projects,
+        "team_id": team_id,
     }
     return render(request, "figma_auth/project_list.html", context)
+
+
+@login_required
+@require_POST
+def save_team_id(request):
+    """Save the user's Figma team ID to SocialAccount.extra_data."""
+    team_id = request.POST.get("team_id", "").strip()
+    if not team_id:
+        messages.error(request, "Please provide a team ID.")
+        return redirect("figma_auth:project_list")
+
+    try:
+        account = SocialAccount.objects.get(
+            user=request.user, provider="figma"
+        )
+    except SocialAccount.DoesNotExist:
+        messages.error(request, "No Figma account connected. Please connect Figma first.")
+        return redirect("figma_auth:project_list")
+
+    extra = account.extra_data or {}
+    extra["team_id"] = team_id
+    account.extra_data = extra
+    account.save()
+    messages.success(request, "Team ID saved. Loading projects...")
+    return redirect("figma_auth:project_list")
 
 
 @login_required
