@@ -41,6 +41,28 @@ class FigmaClient:
                 401,
                 "Figma token is invalid or expired. Please reconnect your Figma account.",
             )
+        if response.status_code == 403:
+            try:
+                err = response.json().get("err", "")
+            except ValueError:
+                err = ""
+            if "Request denied" in err:
+                raise FigmaAPIError(
+                    403,
+                    "Figma denied access to this resource. The /teams/ projects "
+                    "endpoint requires a PUBLISHED PRIVATE OAuth app. This means "
+                    "your app must be (1) set to private, not public, AND (2) "
+                    "published — an unpublished private app is still in draft "
+                    "state and cannot call REST APIs. Go to figma.com/developers, "
+                    "open your app, complete the configuration, click Publish "
+                    "(select Private — no Figma review needed), then reconnect "
+                    "your Figma account to get a fresh token.",
+                )
+            raise FigmaAPIError(
+                403,
+                f"Figma denied access (403): {err or 'Insufficient permissions.'} "
+                "Check that your OAuth app has the required scopes and team access.",
+            )
         if response.status_code == 429:
             raise FigmaAPIError(
                 429,
@@ -48,7 +70,7 @@ class FigmaClient:
             )
         if not response.ok:
             try:
-                detail = response.json().get("message", response.text)
+                detail = response.json().get("message") or response.json().get("err") or response.text
             except ValueError:
                 detail = response.text
             raise FigmaAPIError(response.status_code, detail)

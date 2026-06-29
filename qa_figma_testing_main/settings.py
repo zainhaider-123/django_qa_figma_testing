@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sites',
 
     # external apps
     'allauth',
@@ -73,6 +74,11 @@ SOCIALACCOUNT_PROVIDERS = {
         'SCOPE': ['file_content:read', 'projects:read', 'current_user:read'],
     }
 }
+
+# Store OAuth access tokens in the DB so FigmaClient can read them later.
+# allauth defaults this to False, which means SocialAccount is created but
+# SocialToken is never persisted — causing 401 "No Figma token found".
+SOCIALACCOUNT_STORE_TOKENS = True
 
 AUTHENTICATION_BACKENDS = [
     # Needed to login by username in Django admin, regardless of `allauth`
@@ -162,6 +168,12 @@ STATIC_ROOT = BASE_DIR / "staticfiles"  # for production
 # Media files (uploaded images: figma PNGs, screenshots, diffs)
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Site ID (required by django-allauth to match SocialApp to current site)
+SITE_ID = 1
+
+# allauth: skip email verification for social logins (single-user dev tool)
+ACCOUNT_EMAIL_VERIFICATION = "none"
 
 # Login redirect
 LOGIN_REDIRECT_URL = '/'

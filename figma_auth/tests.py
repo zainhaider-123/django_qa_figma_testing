@@ -83,9 +83,102 @@ class ProjectListViewTests(TestCase):
             401, "No Figma token found for this user. Please connect Figma."
         )
         self.client.force_login(self.user)
+        # Create SocialAccount with a team_id so we reach FigmaClient init
+        SocialAccount.objects.create(
+            user=self.user,
+            provider="figma",
+            uid="figma_uid_1",
+            extra_data={"team_id": "123456"},
+        )
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No Figma token found")
+
+    def test_no_social_account_graceful(self):
+        """If the user has no SocialAccount, show an error message."""
+        self.client.force_login(self.user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No Figma account connected")
+
+    def test_no_team_id_shows_form(self):
+        """If no team_id is stored, show the team ID entry form."""
+        self.client.force_login(self.user)
+        SocialAccount.objects.create(
+            user=self.user,
+            provider="figma",
+            uid="figma_uid_2",
+            extra_data={},
+        )
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Enter your Figma Team ID")
+        self.assertContains(response, "name=\"team_id\"")
+
+    @patch("figma_auth.views.FigmaClient")
+    def test_with_team_id_fetches_projects(self, mock_client_class):
+        """With a stored team_id, fetch and display projects."""
+        mock_client = MagicMock()
+        mock_client.get_team_projects.return_value = [
+            {"id": "proj_1", "name": "My Project"},
+        ]
+        mock_client_class.return_value = mock_client
+
+        self.client.force_login(self.user)
+        SocialAccount.objects.create(
+            user=self.user,
+            provider="figma",
+            uid="figma_uid_3",
+            extra_data={"team_id": "team_abc"},
+        )
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "My Project")
+        mock_client.get_team_projects.assert_called_once_with("team_abc")
+
+
+class SaveTeamIdViewTests(TestCase):
+    def setUp(self):
+        self.url = reverse("figma_auth:save_team_id")
+        self.user = User.objects.create_user(
+            username="testuser", password="password123"
+        )
+
+    def test_redirects_when_not_logged_in(self):
+        """Anonymous users should be redirected to login."""
+        response = self.client.post(self.url, {"team_id": "123"})
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/accounts/login/", response.url)
+
+    def test_get_not_allowed(self):
+        """GET should return 405 (require_POST)."""
+        self.client.force_login(self.user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 405)
+
+    def test_empty_team_id_shows_error(self):
+        """Empty team_id should show an error and redirect."""
+        self.client.force_login(self.user)
+        response = self.client.post(self.url, {"team_id": ""})
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse("figma_auth:project_list"))
+
+    def test_saves_team_id_to_extra_data(self):
+        """Valid team_id should be stored in SocialAccount.extra_data."""
+        self.client.force_login(self.user)
+        account = SocialAccount.objects.create(
+            user=self.user,
+            provider="figma",
+            uid="figma_uid_4",
+            extra_data={"email": "test@example.com"},
+        )
+        response = self.client.post(self.url, {"team_id": "999888"})
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse("figma_auth:project_list"))
+        account.refresh_from_db()
+        self.assertEqual(account.extra_data["team_id"], "999888")
+        # Original extra_data should be preserved
+        self.assertEqual(account.extra_data["email"], "test@example.com")
 
 
 class FileListViewTests(TestCase):
