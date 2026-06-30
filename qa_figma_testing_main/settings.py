@@ -156,7 +156,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 
 # source(s) for python manage.py collectstatic
 STATICFILES_DIRS = [
@@ -166,7 +166,7 @@ STATICFILES_DIRS = [
 STATIC_ROOT = BASE_DIR / "staticfiles"  # for production
 
 # Media files (uploaded images: figma PNGs, screenshots, diffs)
-MEDIA_URL = 'media/'
+MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # Caching (LocMemCache — appropriate for single-user, synchronous, SQLite-only v2)
