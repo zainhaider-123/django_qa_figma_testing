@@ -427,9 +427,10 @@ class FigmaClientTests(TestCase):
         self.assertEqual(ctx.exception.status_code, 401)
         self.assertIn("token is invalid", str(ctx.exception))
 
+    @patch("figma_auth.services.time.sleep")
     @patch("requests.Session.request")
-    def test_429_raises_figma_api_error(self, mock_request):
-        """A 429 response should raise FigmaAPIError with rate-limit message."""
+    def test_429_raises_figma_api_error(self, mock_request, mock_sleep):
+        """A 429 response should raise FigmaAPIError after retries exhausted."""
         mock_response = MagicMock()
         mock_response.status_code = 429
         mock_response.ok = False
@@ -440,6 +441,46 @@ class FigmaClientTests(TestCase):
             client.get_me()
         self.assertEqual(ctx.exception.status_code, 429)
         self.assertIn("rate limit", str(ctx.exception).lower())
+        # 1 initial + 3 retries
+        self.assertEqual(mock_request.call_count, 4)
+
+    @patch("figma_auth.services.time.sleep")
+    @patch("requests.Session.request")
+    def test_429_retries_then_succeeds(self, mock_request, mock_sleep):
+        """A 429 followed by a 200 should succeed after retrying."""
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+        rate_limited.ok = False
+        success = MagicMock()
+        success.status_code = 200
+        success.ok = True
+        success.json.return_value = {"id": "figma_id"}
+        mock_request.side_effect = [rate_limited, success]
+
+        client = FigmaClient(self.user)
+        result = client.get_me()
+        self.assertEqual(result["id"], "figma_id")
+        self.assertEqual(mock_request.call_count, 2)
+        mock_sleep.assert_called_once()
+
+    @patch("figma_auth.services.time.sleep")
+    @patch("requests.Session.request")
+    def test_429_honors_retry_after_header(self, mock_request, mock_sleep):
+        """429 with Retry-After header should sleep for that many seconds."""
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+        rate_limited.ok = False
+        rate_limited.headers = {"Retry-After": "5"}
+        success = MagicMock()
+        success.status_code = 200
+        success.ok = True
+        success.json.return_value = {"id": "figma_id"}
+        mock_request.side_effect = [rate_limited, success]
+
+        client = FigmaClient(self.user)
+        result = client.get_me()
+        self.assertEqual(result["id"], "figma_id")
+        mock_sleep.assert_called_once_with(5.0)
 
     def test_figma_api_error_repr(self):
         """FigmaAPIError should store status_code and message."""
@@ -526,8 +567,9 @@ class FigmaClientTests(TestCase):
 
         self.assertEqual(mock_request.call_count, 4)
 
+    @patch("figma_auth.services.time.sleep")
     @patch("requests.Session.request")
-    def test_get_frame_image_does_not_cache_errors(self, mock_request):
+    def test_get_frame_image_does_not_cache_errors(self, mock_request, mock_sleep):
         """Failed API calls should not be cached."""
         error_response = MagicMock()
         error_response.status_code = 429
@@ -540,7 +582,8 @@ class FigmaClientTests(TestCase):
         with self.assertRaises(FigmaAPIError):
             client.get_frame_image("file_key", "frame_1")
 
-        self.assertEqual(mock_request.call_count, 2)
+        # Each call retries 3 times (4 requests) before raising
+        self.assertEqual(mock_request.call_count, 8)
 
     @patch("requests.Session.request")
     def test_get_file_tree_caches_response(self, mock_request):
@@ -588,8 +631,9 @@ class FigmaClientTests(TestCase):
 
         self.assertEqual(mock_request.call_count, 2)
 
+    @patch("figma_auth.services.time.sleep")
     @patch("requests.Session.request")
-    def test_get_file_tree_does_not_cache_errors(self, mock_request):
+    def test_get_file_tree_does_not_cache_errors(self, mock_request, mock_sleep):
         """Failed API calls should not be cached."""
         error_response = MagicMock()
         error_response.status_code = 429
@@ -603,4 +647,5 @@ class FigmaClientTests(TestCase):
         with self.assertRaises(FigmaAPIError):
             client.get_file_tree("file_key_1", depth=2)
 
-        self.assertEqual(mock_request.call_count, 2)
+        # Each call retries 3 times (4 requests) before raising
+        self.assertEqual(mock_request.call_count, 8)

@@ -31,7 +31,8 @@ class ScreenshotService:
                     viewport={"width": width, "height": height},
                 )
                 page = context.new_page()
-                page.goto(url, wait_until="networkidle", timeout=timeout)
+                page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+                page.wait_for_load_state("networkidle", timeout=timeout)
                 png_bytes = page.screenshot(full_page=True)
                 browser.close()
                 return png_bytes

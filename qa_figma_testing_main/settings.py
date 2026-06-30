@@ -184,6 +184,12 @@ FIGMA_FILE_TREE_CACHE_TIMEOUT = config("FIGMA_FILE_TREE_CACHE_TIMEOUT", default=
 # How long to cache Figma frame-image PNG bytes (seconds). Tunable via .env.
 FIGMA_FRAME_IMAGE_CACHE_TIMEOUT = config("FIGMA_FRAME_IMAGE_CACHE_TIMEOUT", default=600, cast=int)
 
+# Max retry attempts on Figma 429 rate-limit responses before raising.
+FIGMA_RATE_LIMIT_MAX_RETRIES = config("FIGMA_RATE_LIMIT_MAX_RETRIES", default=3, cast=int)
+
+# Base for exponential backoff (seconds) between 429 retries.
+FIGMA_RATE_LIMIT_BACKOFF_BASE = config("FIGMA_RATE_LIMIT_BACKOFF_BASE", default=2, cast=int)
+
 # Site ID (required by django-allauth to match SocialApp to current site)
 SITE_ID = 1
 

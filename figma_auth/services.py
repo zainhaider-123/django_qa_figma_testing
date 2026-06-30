@@ -40,9 +40,47 @@ class FigmaClient:
         )
 
     def _request(self, method: str, path: str, **kwargs) -> requests.Response:
-        """Make an authenticated request to the Figma API and handle errors."""
+        """Make an authenticated request to the Figma API and handle errors.
+
+        On 429 (rate limit) responses, automatically retries with
+        exponential backoff up to ``FIGMA_RATE_LIMIT_MAX_RETRIES`` times.
+        If the response includes a ``Retry-After`` header, that value (in
+        seconds) is used instead of the computed backoff. After all retries
+        are exhausted the 429 is raised as ``FigmaAPIError`` like any other
+        error.
+        """
         url = f"{self.BASE_URL}{path}"
+        max_retries = getattr(settings, "FIGMA_RATE_LIMIT_MAX_RETRIES", 3)
+        backoff_base = getattr(
+            settings, "FIGMA_RATE_LIMIT_BACKOFF_BASE", 2
+        )
+
+        kwargs.setdefault("timeout", 30)
         response = self._session.request(method, url, **kwargs)
+        for attempt in range(max_retries):
+            if response.status_code != 429:
+                break
+
+            retry_after = response.headers.get("Retry-After")
+            if retry_after is not None:
+                try:
+                    sleep_seconds = float(retry_after)
+                except (TypeError, ValueError):
+                    sleep_seconds = backoff_base ** (attempt + 1)
+            else:
+                sleep_seconds = backoff_base ** (attempt + 1)
+
+            logger.warning(
+                "Figma API rate limited (429) on %s %s, retrying in "
+                "%.1fs (attempt %d/%d)",
+                method,
+                path,
+                sleep_seconds,
+                attempt + 1,
+                max_retries,
+            )
+            time.sleep(sleep_seconds)
+            response = self._session.request(method, url, timeout=30, **kwargs)
 
         if response.status_code == 401:
             raise FigmaAPIError(
@@ -215,7 +253,7 @@ class FigmaClient:
                     f"'{file_key}'.",
                 )
             # Download the actual PNG bytes from the signed URL (no auth required)
-            png_response = requests.get(image_url)
+            png_response = requests.get(image_url, timeout=30)
             png_response.raise_for_status()
             return png_response.content
 

@@ -7,6 +7,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+# Runs stuck in "running" longer than this are considered orphaned (server
+# restart, killed process, etc.) and auto-failed when the report is viewed.
+STALE_RUN_TIMEOUT_SECONDS = 300  # 5 minutes
+
 from figma_auth.services import FigmaClient, FigmaAPIError
 
 from qa.models import TestRun
@@ -132,6 +136,21 @@ def new_run(request):
 def run_report(request, run_id):
     """Display the test run report with images and metrics."""
     run = get_object_or_404(TestRun, id=run_id, user=request.user)
+
+    # Auto-fail orphaned runs stuck in "running" longer than the timeout.
+    # This happens when the dev server restarts or the request is interrupted
+    # mid-pipeline — the TestRun row stays in "running" forever otherwise.
+    if run.status == "running":
+        age = (timezone.now() - run.created_at).total_seconds()
+        if age > STALE_RUN_TIMEOUT_SECONDS:
+            run.status = "failed"
+            run.error_message = (
+                "Run timed out — the server may have restarted while the "
+                "test was in progress. Try re-running."
+            )
+            run.completed_at = timezone.now()
+            run.save()
+
     return render(request, "qa/run_report.html", {"run": run})
 
 
