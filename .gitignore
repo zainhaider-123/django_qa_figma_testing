@@ -16,7 +16,7 @@ __pycache__/
 *.so
 
 # png media files from figma
-media/figma
+media/
 
 # Distribution / packaging
 .Python
